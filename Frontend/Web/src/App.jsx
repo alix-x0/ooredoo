@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { ACCESS_TOKEN, USER_ROLE } from "@/constants";
+import Login from "@/pages/Login";
 
 // Helper components / stubs
 function ScrollToTop() {
@@ -19,22 +20,8 @@ function Home() {
   );
 }
 
-function Login() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-white text-slate-800 p-6">
-      <h2 className="text-2xl font-bold mb-4">Login</h2>
-      <p className="text-slate-500 mb-4">Authentication Portal Stub</p>
-    </div>
-  );
-}
-
 function Register() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-white text-slate-800 p-6">
-      <h2 className="text-2xl font-bold mb-4">Register</h2>
-      <p className="text-slate-500 mb-4">User Registration Portal Stub</p>
-    </div>
-  );
+  return <Login />;
 }
 
 function DashboardRedirect() {
