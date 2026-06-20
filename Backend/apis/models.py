@@ -44,3 +44,66 @@ class Administrator(User):
 
     class Meta:
         verbose_name_plural = "Administrators"
+
+
+class Gift(models.Model):
+    class Priority(models.TextChoices):
+        LOW = 'Low', 'Low'
+        MEDIUM = 'Medium', 'Medium'
+        HIGH = 'High', 'High'
+
+    class Status(models.TextChoices):
+        ACTIVE = 'Active', 'Active'
+        PAUSED = 'Paused', 'Paused'
+        ARCHIVED = 'Archived', 'Archived'
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    category = models.CharField(max_length=100, default='Merchandise')
+    priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.MEDIUM)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    stock = models.IntegerField(default=0)
+    claimed = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='gifts')
+
+    def __str__(self):
+        return self.name
+
+
+class GiftAssignment(models.Model):
+    gift = models.ForeignKey(Gift, on_delete=models.CASCADE, related_name='assignments')
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='gift_assignments')
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_gifts')
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.gift.name} -> {self.employee.email}"
+
+
+class DispatchOrder(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'Draft', 'Draft'
+        PENDING = 'Pending Dispatch', 'Pending Dispatch'
+        IN_TRANSIT = 'In Transit', 'In Transit'
+        ARRIVED = 'Arrived', 'Arrived'
+        DELIVERED = 'Delivered', 'Delivered'
+        CANCELLED = 'Cancelled', 'Cancelled'
+
+    tracking_number = models.CharField(max_length=50, unique=True)
+    gift = models.ForeignKey(Gift, on_delete=models.CASCADE, related_name='dispatches')
+    quantity = models.IntegerField(default=1)
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='dispatches')
+    destination_wilaya = models.CharField(max_length=100)
+    source_warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='source_dispatches')
+    destination_warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='destination_dispatches')
+    current_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='current_dispatches')
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.PENDING)
+    route = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.tracking_number} ({self.status})"
+
+

@@ -58,7 +58,7 @@ const ToastItem = ({ toast, onClose }) => {
   const icons = {
     success: <CheckCircle className="h-5 w-5 text-emerald-500" />,
     error: <AlertCircle className="h-5 w-5 text-red-500" />,
-    info: <Info className="h-5 w-5 text-blue-500" />,
+    info: <Info className="h-5 w-5 text-red-500" />,
     warning: <AlertCircle className="h-5 w-5 text-amber-500" />,
     loading: <Loader2 className="h-5 w-5 text-primary animate-spin" />,
   };
@@ -66,7 +66,7 @@ const ToastItem = ({ toast, onClose }) => {
   const styles = {
     success: 'border-emerald-100 bg-white dark:bg-slate-900',
     error: 'border-red-100 bg-white dark:bg-slate-900',
-    info: 'border-blue-100 bg-white dark:bg-slate-900',
+    info: 'border-red-100 bg-white dark:bg-slate-900',
     warning: 'border-amber-100 bg-white dark:bg-slate-900',
     loading: 'border-primary/20 bg-white dark:bg-slate-900',
   };
