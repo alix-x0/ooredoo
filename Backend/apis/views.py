@@ -97,9 +97,20 @@ class GiftRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class GiftAssignmentListCreateView(generics.ListCreateAPIView):
-    queryset = GiftAssignment.objects.all().order_by('-assigned_at')
     serializer_class = GiftAssignmentSerializer
-    permission_classes = [IsAdmin]
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == User.Role.ADMIN:
+            return GiftAssignment.objects.all().order_by('-assigned_at')
+        elif user.role == User.Role.EMPLOYEE:
+            return GiftAssignment.objects.filter(employee=user).order_by('-assigned_at')
+        return GiftAssignment.objects.none()
 
     def perform_create(self, serializer):
         gift = serializer.validated_data['gift']
@@ -113,6 +124,7 @@ class GiftAssignmentListCreateView(generics.ListCreateAPIView):
         gift.save()
         
         serializer.save(assigned_by=self.request.user)
+
 
 
 class GiftAssignmentDestroyView(generics.DestroyAPIView):
@@ -147,7 +159,10 @@ class DispatchOrderListCreateView(generics.ListCreateAPIView):
                 ).order_by('-created_at')
             except Exception:
                 return DispatchOrder.objects.none()
+        elif user.role == User.Role.EMPLOYEE:
+            return DispatchOrder.objects.filter(employee=user).order_by('-created_at')
         return DispatchOrder.objects.none()
+
 
     def perform_create(self, serializer):
         user = self.request.user

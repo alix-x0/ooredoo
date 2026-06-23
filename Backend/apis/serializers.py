@@ -14,7 +14,10 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         if not attrs.get("username"):
             attrs["username"] = attrs.get("email")
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        data['user'] = UserSerializer(self.user, context=self.context).data
+        return data
+
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -28,13 +31,14 @@ class UserSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     department = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     job_title = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
-
+    loyalty_points = serializers.IntegerField(required=False, read_only=True)
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'role', 'profile_picture', 'password',
             'first_name', 'last_name', 'is_active', 'gift_count',
-            'location', 'capacity', 'description', 'phone', 'department', 'job_title'
+            'location', 'capacity', 'description', 'phone', 'department', 'job_title',
+            'loyalty_points'
         ]
         read_only_fields = ['id']
 
@@ -48,13 +52,16 @@ class UserSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         profile_map = {
             User.Role.WAREHOUSE: ('warehouse', ['location', 'capacity', 'description']),
-            User.Role.EMPLOYEE: ('employee', ['phone', 'department', 'job_title']),
+            User.Role.EMPLOYEE: ('employee', ['phone', 'department', 'job_title', 'loyalty_points']),
             User.Role.ADMIN: ('administrator', ['department']),
         }
         config = profile_map.get(instance.role)
         if config:
             related_name, fields = config
-            profile = getattr(instance, related_name, None)
+            try:
+                profile = getattr(instance, related_name)
+            except Exception:
+                profile = None
             if profile:
                 for field in fields:
                     data[field] = getattr(profile, field, None)
@@ -145,7 +152,8 @@ class GiftSerializer(serializers.ModelSerializer):
         model = Gift
         fields = [
             'id', 'name', 'description', 'category', 'priority', 
-            'status', 'stock', 'claimed', 'created_at', 'warehouse', 'warehouse_name'
+            'status', 'stock', 'claimed', 'price', 'points_cost',
+            'created_at', 'warehouse', 'warehouse_name'
         ]
         read_only_fields = ['id', 'claimed', 'created_at', 'warehouse']
 
@@ -154,12 +162,18 @@ class GiftAssignmentSerializer(serializers.ModelSerializer):
     employee_email = serializers.ReadOnlyField(source='employee.email')
     employee_name = serializers.SerializerMethodField()
     gift_name = serializers.ReadOnlyField(source='gift.name')
+    gift_description = serializers.ReadOnlyField(source='gift.description')
+    gift_category = serializers.ReadOnlyField(source='gift.category')
+    gift_price = serializers.ReadOnlyField(source='gift.price')
+    gift_points_cost = serializers.ReadOnlyField(source='gift.points_cost')
     assigned_by_email = serializers.ReadOnlyField(source='assigned_by.email')
 
     class Meta:
         model = GiftAssignment
         fields = [
-            'id', 'gift', 'gift_name', 'employee', 'employee_email', 
+            'id', 'gift', 'gift_name', 'gift_description', 'gift_category',
+            'gift_price', 'gift_points_cost',
+            'employee', 'employee_email', 
             'employee_name', 'assigned_by', 'assigned_by_email', 'assigned_at'
         ]
         read_only_fields = ['id', 'assigned_by', 'assigned_at']
@@ -173,6 +187,10 @@ class GiftAssignmentSerializer(serializers.ModelSerializer):
 
 class DispatchOrderSerializer(serializers.ModelSerializer):
     gift_name = serializers.ReadOnlyField(source='gift.name')
+    gift_description = serializers.ReadOnlyField(source='gift.description')
+    gift_category = serializers.ReadOnlyField(source='gift.category')
+    gift_price = serializers.ReadOnlyField(source='gift.price')
+    gift_points_cost = serializers.ReadOnlyField(source='gift.points_cost')
     employee_email = serializers.ReadOnlyField(source='employee.email')
     employee_name = serializers.SerializerMethodField()
     source_warehouse_name = serializers.ReadOnlyField(source='source_warehouse.username')
@@ -182,7 +200,8 @@ class DispatchOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = DispatchOrder
         fields = [
-            'id', 'tracking_number', 'gift', 'gift_name', 'quantity', 
+            'id', 'tracking_number', 'gift', 'gift_name', 'gift_description',
+            'gift_category', 'gift_price', 'gift_points_cost', 'quantity', 
             'employee', 'employee_email', 'employee_name', 'destination_wilaya',
             'source_warehouse', 'source_warehouse_name',
             'destination_warehouse', 'destination_warehouse_name',
