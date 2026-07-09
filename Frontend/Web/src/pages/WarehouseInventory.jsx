@@ -39,6 +39,7 @@ export default function WarehouseInventory() {
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [profile, setProfile] = useState(null);
   
   const appleFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -64,6 +65,7 @@ export default function WarehouseInventory() {
   };
 
   useEffect(() => {
+    api.get("/auth/profile/").then(res => setProfile(res.data)).catch(console.error);
     fetchGifts();
   }, []);
 
@@ -253,13 +255,15 @@ export default function WarehouseInventory() {
           </div>
 
           {/* Create Button */}
-          <button 
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Gift Item
-          </button>
+          {profile?.username === 'central_hub' && (
+            <button 
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Gift Item
+            </button>
+          )}
         </div>
       </div>
 

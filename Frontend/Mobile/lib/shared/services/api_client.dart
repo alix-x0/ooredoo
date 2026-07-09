@@ -195,6 +195,41 @@ class ApiClient {
     return response;
   }
 
+  Future<http.Response> patch(
+    String endpoint,
+    Map<String, dynamic> data, {
+    bool includeToken = true,
+  }) async {
+    var token = includeToken ? await _getToken() : null;
+    final url = _buildUrl(endpoint);
+
+    var response = await http.patch(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 401 && includeToken) {
+      final refreshed = await _refreshToken();
+      if (refreshed) {
+        token = await _getToken();
+        response = await http.patch(
+          Uri.parse(url),
+          headers: {
+            'Content-Type': 'application/json',
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(data),
+        );
+      }
+    }
+
+    return response;
+  }
+
   Future<http.Response> delete(
     String endpoint, {
     bool includeToken = true,

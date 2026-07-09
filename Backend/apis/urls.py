@@ -5,7 +5,8 @@ from .views import (
     UserListView, UserAdminUpdateView, ChangePasswordView,
     GiftListCreateView, GiftRetrieveUpdateDestroyView,
     GiftAssignmentListCreateView, GiftAssignmentDestroyView,
-    DispatchOrderListCreateView, DispatchOrderActionView
+    DispatchOrderListCreateView, DispatchOrderActionView,
+    NotificationListUpdateView
 )
 
 urlpatterns = [
@@ -22,6 +23,8 @@ urlpatterns = [
     path('gift-assignments/<int:pk>/', GiftAssignmentDestroyView.as_view(), name='gift-assignment-detail'),
     path('dispatches/', DispatchOrderListCreateView.as_view(), name='dispatch-list'),
     path('dispatches/<int:pk>/action/', DispatchOrderActionView.as_view(), name='dispatch-action'),
+    path('notifications/', NotificationListUpdateView.as_view(), name='notification-list'),
+    path('notifications/<int:pk>/', NotificationListUpdateView.as_view(), name='notification-update'),
 ]
 
 

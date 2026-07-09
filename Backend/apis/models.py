@@ -25,6 +25,7 @@ class User(AbstractUser):
 class Warehouse(User):
     location = models.CharField(max_length=255, blank=True, null=True)
     capacity = models.IntegerField(blank=True, null=True)
+    zones = models.IntegerField(default=1)
     description = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -35,6 +36,7 @@ class Employee(User):
     phone = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=100, blank=True, null=True)
     job_title = models.CharField(max_length=100, blank=True, null=True)
+    home_address = models.TextField(blank=True, null=True)
     loyalty_points = models.IntegerField(default=0)
 
     class Meta:
@@ -104,6 +106,8 @@ class DispatchOrder(models.Model):
     current_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='current_dispatches')
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.PENDING)
     route = models.JSONField(default=list, blank=True)
+    current_lat = models.FloatField(null=True, blank=True)
+    current_lng = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -111,3 +115,24 @@ class DispatchOrder(models.Model):
         return f"{self.tracking_number} ({self.status})"
 
 
+class Notification(models.Model):
+    class Type(models.TextChoices):
+        AWARDED = 'AWARDED', 'Awarded'
+        DISPATCHED = 'DISPATCHED', 'Dispatched'
+        IN_TRANSIT = 'IN_TRANSIT', 'In Transit'
+        ARRIVED = 'ARRIVED', 'Arrived'
+        DELIVERED = 'DELIVERED', 'Delivered'
+        INFO = 'INFO', 'Info'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(max_length=20, choices=Type.choices, default=Type.INFO)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.notification_type}] {self.title} - {self.user.username}"

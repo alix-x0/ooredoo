@@ -7,7 +7,7 @@ import '../../../../shared/services/api_client.dart';
 import '../../../../shared/services/auth_service.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import 'notifications_screen.dart';
-import 'gift_catalog_screen.dart';
+import 'gift_tracking_map_screen.dart';
 
 class EmployeeHomeScreen extends ConsumerStatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -21,6 +21,7 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
   bool _loading = false;
   List<dynamic> _assignments = [];
   List<dynamic> _dispatches = [];
+  int _unreadNotifications = 0;
   String? _error;
 
   @override
@@ -39,10 +40,18 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
       final client = ref.read(apiClientProvider);
       final assignRes = await client.get('gift-assignments/');
       final dispatchRes = await client.get('dispatches/');
+      final notifRes = await client.get('notifications/');
 
       if (assignRes.statusCode == 200 && dispatchRes.statusCode == 200) {
         final assignData = jsonDecode(assignRes.body);
         final dispatchData = jsonDecode(dispatchRes.body);
+        int unreadCount = 0;
+        
+        if (notifRes.statusCode == 200) {
+           final notifData = jsonDecode(notifRes.body);
+           final List nList = notifData is Map && notifData.containsKey('results') ? notifData['results'] : (notifData is List ? notifData : []);
+           unreadCount = nList.where((n) => n['is_read'] != true).length;
+        }
 
         setState(() {
           if (assignData is Map && assignData.containsKey('results')) {
@@ -56,6 +65,7 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
           } else {
             _dispatches = dispatchData is List ? dispatchData : [];
           }
+          _unreadNotifications = unreadCount;
         });
       } else {
         setState(() {
@@ -106,7 +116,7 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildCustomNavItem(
                   icon: Icons.home_outlined,
@@ -122,25 +132,6 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                   icon: Icons.phone_outlined,
                   activeIcon: Icons.phone_rounded,
                   index: 2,
-                ),
-                // Floating Action Button matching mockup (Red circular button with "+")
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const GiftCatalogScreen()));
-                  },
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFED1C24),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.add,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -223,12 +214,16 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
   // ──────────────────────────────────────────────────────────────
   Widget _buildHomeTab(user) {
     final paddingTop = MediaQuery.of(context).padding.top;
-    final int userPoints = user?.loyaltyPoints ?? (user?.giftCount != null ? (user!.giftCount * 1200 + 3500) : 4700);
+    final int totalGifts = _assignments.length;
 
     // Get the most recent active dispatch for "Current Tracking"
     Map<String, dynamic>? currentDispatch;
-    if (_dispatches.isNotEmpty) {
-      currentDispatch = _dispatches.first;
+    try {
+      currentDispatch = _dispatches.firstWhere(
+        (d) => d['status'] != 'Delivered' && d['status'] != 'Cancelled'
+      );
+    } catch (_) {
+      currentDispatch = null;
     }
 
     return SingleChildScrollView(
@@ -269,7 +264,7 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                           children: [
                             Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[400]),
                             const SizedBox(width: 4),
-                            Text('Ooredoo HQ, Algiers', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                            Text(user?.location?.isNotEmpty == true ? user!.location! : 'Algeria', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
                           ],
                         ),
                       ],
@@ -288,7 +283,25 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                     alignment: Alignment.center,
                     children: [
                       const Icon(Icons.notifications_none_rounded, color: Color(0xFF1E293B)),
-                      Positioned(top: 10, right: 10, child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFFED1C24), shape: BoxShape.circle))),
+                      if (_unreadNotifications > 0)
+                        Positioned(
+                          top: 8, 
+                          right: 8, 
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFED1C24),
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 12, minHeight: 12),
+                            child: Center(
+                              child: Text(
+                                '$_unreadNotifications', 
+                                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)
+                              )
+                            )
+                          )
+                        ),
                     ],
                   ),
                 ),
@@ -311,16 +324,8 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Your Points Balance', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                      GestureDetector(
-                        onTap: () => setState(() => _currentTab = 1),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-                          child: const Text('Redeem', style: TextStyle(color: Color(0xFFED1C24), fontWeight: FontWeight.bold, fontSize: 12)),
-                        ),
-                      ),
+                    children: const [
+                      Text('Total Gifts', style: TextStyle(color: Colors.white70, fontSize: 13)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -328,52 +333,31 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
-                        '${NumberFormat('#,##0', 'en_US').format(userPoints).replaceAll(',', ' ')} pts',
+                        '$totalGifts',
                         style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.remove_red_eye_outlined, color: Colors.white.withOpacity(0.5), size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Gifts',
+                        style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.w500),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _currentTab = 1),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.local_shipping_outlined, color: Color(0xFFED1C24), size: 18),
-                                SizedBox(width: 8),
-                                Text('Track Gifts', style: TextStyle(color: Color(0xFFED1C24), fontWeight: FontWeight.bold, fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ),
+                  GestureDetector(
+                    onTap: () => setState(() => _currentTab = 1),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.local_shipping_outlined, color: Color(0xFFED1C24), size: 18),
+                          SizedBox(width: 8),
+                          Text('Track Gifts', style: TextStyle(color: Color(0xFFED1C24), fontWeight: FontWeight.bold, fontSize: 13)),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _currentTab = 1), // Actually gifts is tab 1
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.card_giftcard_outlined, color: Color(0xFFED1C24), size: 18),
-                                SizedBox(width: 8),
-                                Text('Claim Gifts', style: TextStyle(color: Color(0xFFED1C24), fontWeight: FontWeight.bold, fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -469,10 +453,21 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
   }
 
   Widget _buildCurrentTrackingCard(Map<String, dynamic> dispatch) {
-    final tracking = dispatch['tracking_number'] ?? 'PAQ-327-P21';
+    final tracking = dispatch['tracking_number'] ?? 'PAQ-XXX-XXX';
     final status = dispatch['status'] ?? 'In Transit';
-    final fromAddress = dispatch['source_warehouse_name'] ?? '15, Idumota RD';
-    final toAddress = dispatch['destination_wilaya'] ?? '21, Ikeja Lagos';
+    final fromAddress = dispatch['source_warehouse_name'] ?? 'Source Hub';
+    final toAddress = dispatch['destination_wilaya'] ?? 'Destination';
+    
+    String fromDateStr = 'Pending';
+    String toDateStr = 'Pending';
+    
+    if (dispatch['created_at'] != null) {
+      try {
+        final dt = DateTime.parse(dispatch['created_at']);
+        fromDateStr = DateFormat('dd MMM yyyy').format(dt);
+        toDateStr = DateFormat('dd MMM yyyy').format(dt.add(const Duration(days: 3)));
+      } catch (_) {}
+    }
     
     // Status color
     Color statusColor = const Color(0xFF3B82F6); // default blue
@@ -530,7 +525,7 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                         const SizedBox(height: 4),
                         Text(fromAddress, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), maxLines: 1, overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 2),
-                        Text('16 Jan 2026', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                        Text(fromDateStr, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
                       ],
                     ),
                   ),
@@ -538,11 +533,11 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('To:', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                        Text('To (ETA):', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
                         const SizedBox(height: 4),
                         Text(toAddress, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), maxLines: 1, overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 2),
-                        Text('25 Jan 2026', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                        Text(toDateStr, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
                       ],
                     ),
                   ),
@@ -613,12 +608,22 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
 
   List<Widget> _buildRecentActivitiesList(user) {
     List<Widget> items = [];
-    
-    for (var dispatch in _dispatches.take(3)) {
-      items.add(_buildRecentActivityItem(dispatch, user, isGift: false));
-    }
-    for (var assignment in _assignments.take(2)) {
-      items.add(_buildRecentActivityItem(assignment, user, isGift: true));
+    List<dynamic> allActivities = [];
+
+    allActivities.addAll(_dispatches.map((d) => {'type': 'dispatch', 'data': d}));
+    allActivities.addAll(_assignments.map((a) => {'type': 'assignment', 'data': a}));
+
+    allActivities.sort((a, b) {
+      final String dateAStr = a['data']['created_at'] ?? a['data']['assigned_at'] ?? '';
+      final String dateBStr = b['data']['created_at'] ?? b['data']['assigned_at'] ?? '';
+      
+      final dateA = DateTime.tryParse(dateAStr) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final dateB = DateTime.tryParse(dateBStr) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return dateB.compareTo(dateA); // descending
+    });
+
+    for (var act in allActivities.take(5)) {
+      items.add(_buildRecentActivityItem(act['data'], user, isGift: act['type'] == 'assignment'));
     }
     
     if (items.isEmpty) {
@@ -643,12 +648,12 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
   }
 
   Widget _buildRecentActivityItem(Map<String, dynamic> data, user, {required bool isGift}) {
-    final title = isGift ? 'GIFT-${data['id']}' : (data['tracking_number'] ?? 'PAQ-401-A36');
+    final title = isGift ? 'GIFT-${data['id']}' : (data['tracking_number'] ?? 'PAQ-XXX-XXX');
     final itemName = data['gift_name'] ?? 'Item';
     final status = isGift ? 'Claimed' : (data['status'] ?? 'Completed');
     
     // Formatting date safely
-    String dateStr = '12 Jan 2026';
+    String dateStr = 'Recent';
     final rawDate = data['created_at'] ?? data['assigned_at'];
     if (rawDate != null) {
       try {
@@ -984,7 +989,8 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
   }
 
   Widget _buildActiveDispatchesTabList() {
-    if (_dispatches.isEmpty) {
+    final activeDispatches = _dispatches.where((d) => d['status'] != 'Delivered' && d['status'] != 'Cancelled').toList();
+    if (activeDispatches.isEmpty) {
       return _buildEmptyState(
         'No active dispatches',
         'When Ooredoo dispatches a gift to you, tracking details will show here.',
@@ -994,13 +1000,14 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 110),
-      itemCount: _dispatches.length,
+      itemCount: activeDispatches.length,
       itemBuilder: (context, index) {
-        final order = _dispatches[index];
+        final order = activeDispatches[index];
         final giftName = order['gift_name'] ?? 'Gift Pack';
         final status = order['status'] ?? 'Pending';
         final trackingNumber = order['tracking_number'] ?? 'TRK-XXXXX';
         final route = order['route'] as List? ?? [];
+        final dispatchId = order['id'];
 
         Color statusColor;
         IconData statusIcon;
@@ -1026,6 +1033,9 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
             statusColor = Colors.grey;
             statusIcon = Icons.info_outline_rounded;
         }
+
+        // Show confirm button when status is In Transit or Arrived
+        final canConfirm = status == 'In Transit' || status == 'Arrived';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -1098,18 +1108,42 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
                 ),
               ),
               const Divider(height: 24),
-              ElevatedButton.icon(
-                onPressed: () => _showTrackingFlow(order, route),
-                icon: const Icon(Icons.map_rounded, size: 18),
-                label: const Text('Track Shipment'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFED1C24).withOpacity(0.08),
-                  foregroundColor: const Color(0xFFED1C24),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showTrackingFlow(order, route),
+                      icon: const Icon(Icons.map_rounded, size: 18),
+                      label: const Text('Track'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFED1C24).withOpacity(0.08),
+                        foregroundColor: const Color(0xFFED1C24),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (canConfirm) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _confirmDelivery(dispatchId),
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('Confirm Delivery'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -1118,135 +1152,72 @@ class _EmployeeHomeScreenState extends ConsumerState<EmployeeHomeScreen> {
     );
   }
 
-  void _showTrackingFlow(Map<String, dynamic> order, List<dynamic> route) {
-    const brandColor = Color(0xFFED1C24);
-
-    showModalBottomSheet(
+  Future<void> _confirmDelivery(int dispatchId) async {
+    final confirm = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Confirm Delivery'),
+        content: const Text('Have you received this gift? Once confirmed, it will be marked as delivered.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Yes, Received'),
+          ),
+        ],
       ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Shipment Tracking',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Tracking No: ${order['tracking_number']}',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8), fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 24),
-              if (route.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24.0),
-                    child: Text('No tracking events logged yet.'),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: route.length,
-                    itemBuilder: (context, idx) {
-                      final step = route[idx];
-                      final name = step['warehouse_name'] ?? 'Hub';
-                      final stepStatus = step['status'] ?? 'Pending';
-                      final timeStr = step['timestamp'] ?? '';
+    );
 
-                      final isCompleted = stepStatus == 'Completed' || stepStatus == 'Arrived' || stepStatus == 'Delivered to Employee';
-                      final isLast = idx == route.length - 1;
+    if (confirm != true) return;
 
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            children: [
-                              Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: isCompleted ? brandColor : Colors.grey[200],
-                                  border: Border.all(
-                                    color: isCompleted ? brandColor : Colors.grey[300]!,
-                                    width: 2,
-                                  ),
-                                ),
-                                child: isCompleted
-                                    ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                    : null,
-                              ),
-                              if (!isLast)
-                                Container(
-                                  width: 2,
-                                  height: 48,
-                                  color: isCompleted ? brandColor : Colors.grey[200],
-                                ),
-                            ],
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: isCompleted ? const Color(0xFF1E293B) : Colors.grey[400],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  stepStatus,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: isCompleted ? brandColor : Colors.grey[400],
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (timeStr.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    timeStr.split('T')[0],
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                                  ),
-                                ],
-                                const SizedBox(height: 12),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-            ],
+    try {
+      final client = ref.read(apiClientProvider);
+      final response = await client.post('dispatches/$dispatchId/action/', {
+        'action': 'validate_receipt',
+      });
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gift delivery confirmed! 🎉'),
+            backgroundColor: Color(0xFF10B981),
           ),
         );
-      },
+        _fetchData(); // Refresh the list
+      } else {
+        final body = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(body['error'] ?? 'Failed to confirm delivery'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connection error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showTrackingFlow(Map<String, dynamic> order, List<dynamic> route) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GiftTrackingMapScreen(dispatch: order),
+      ),
     );
   }
 

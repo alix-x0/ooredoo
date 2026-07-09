@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import User, Warehouse, Employee, Administrator, Gift, GiftAssignment, DispatchOrder
+from .models import User, Warehouse, Employee, Administrator, Gift, GiftAssignment, DispatchOrder, Notification
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -27,31 +27,44 @@ class UserSerializer(serializers.ModelSerializer):
     # Role-specific profile fields
     location = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     capacity = serializers.IntegerField(required=False, write_only=True, allow_null=True)
+    zones = serializers.IntegerField(required=False, write_only=True, allow_null=True)
     description = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     department = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     job_title = serializers.CharField(required=False, write_only=True, allow_blank=True, allow_null=True)
     loyalty_points = serializers.IntegerField(required=False, read_only=True)
+    used_capacity = serializers.SerializerMethodField()
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'role', 'profile_picture', 'password',
             'first_name', 'last_name', 'is_active', 'gift_count',
-            'location', 'capacity', 'description', 'phone', 'department', 'job_title',
-            'loyalty_points'
+            'location', 'capacity', 'zones', 'description', 'phone', 'department', 'job_title',
+            'loyalty_points', 'used_capacity'
         ]
         read_only_fields = ['id']
 
     def get_gift_count(self, obj):
         if obj.role == User.Role.EMPLOYEE:
-            from .models import GiftAssignment
-            return GiftAssignment.objects.filter(employee_id=obj.id).count()
+            from .models import DispatchOrder
+            return DispatchOrder.objects.filter(employee_id=obj.id, status='Delivered').count()
+        return None
+
+    def get_used_capacity(self, obj):
+        if obj.role == User.Role.WAREHOUSE:
+            from django.db.models import Sum
+            from .models import Gift
+            try:
+                res = Gift.objects.filter(warehouse=obj.warehouse).aggregate(total_stock=Sum('stock'))
+                return res.get('total_stock') or 0
+            except Exception:
+                return 0
         return None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         profile_map = {
-            User.Role.WAREHOUSE: ('warehouse', ['location', 'capacity', 'description']),
+            User.Role.WAREHOUSE: ('warehouse', ['location', 'capacity', 'zones', 'description']),
             User.Role.EMPLOYEE: ('employee', ['phone', 'department', 'job_title', 'loyalty_points']),
             User.Role.ADMIN: ('administrator', ['department']),
         }
@@ -65,6 +78,10 @@ class UserSerializer(serializers.ModelSerializer):
             if profile:
                 for field in fields:
                     data[field] = getattr(profile, field, None)
+            
+            # Additional check for home_address for Employees
+            if hasattr(instance, 'employee') and instance.role == User.Role.EMPLOYEE:
+                data['home_address'] = getattr(instance.employee, 'home_address', None)
         return data
 
     def create(self, validated_data):
@@ -74,10 +91,12 @@ class UserSerializer(serializers.ModelSerializer):
 
         location = validated_data.pop('location', None)
         capacity = validated_data.pop('capacity', None)
+        zones = validated_data.pop('zones', None)
         description = validated_data.pop('description', None)
         phone = validated_data.pop('phone', None)
         department = validated_data.pop('department', None)
         job_title = validated_data.pop('job_title', None)
+        home_address = validated_data.pop('home_address', None)
 
         models_map = {
             User.Role.WAREHOUSE: Warehouse,
@@ -91,11 +110,11 @@ class UserSerializer(serializers.ModelSerializer):
 
         if role == User.Role.WAREHOUSE and hasattr(user, 'warehouse'):
             w = user.warehouse
-            w.location = location; w.capacity = capacity; w.description = description
+            w.location = location; w.capacity = capacity; w.zones = zones; w.description = description
             w.save()
         elif role == User.Role.EMPLOYEE and hasattr(user, 'employee'):
             e = user.employee
-            e.phone = phone; e.department = department; e.job_title = job_title
+            e.phone = phone; e.department = department; e.job_title = job_title; e.home_address = home_address
             e.save()
         elif role == User.Role.ADMIN and hasattr(user, 'administrator'):
             a = user.administrator
@@ -116,13 +135,13 @@ class UserSerializer(serializers.ModelSerializer):
 
         if instance.role == User.Role.WAREHOUSE and hasattr(instance, 'warehouse'):
             w = instance.warehouse
-            for f in ['location', 'capacity', 'description']:
+            for f in ['location', 'capacity', 'zones', 'description']:
                 if f in validated_data:
                     setattr(w, f, validated_data[f])
             w.save()
         elif instance.role == User.Role.EMPLOYEE and hasattr(instance, 'employee'):
             e = instance.employee
-            for f in ['phone', 'department', 'job_title']:
+            for f in ['phone', 'department', 'job_title', 'home_address']:
                 if f in validated_data:
                     setattr(e, f, validated_data[f])
             e.save()
@@ -192,6 +211,7 @@ class DispatchOrderSerializer(serializers.ModelSerializer):
     gift_price = serializers.ReadOnlyField(source='gift.price')
     gift_points_cost = serializers.ReadOnlyField(source='gift.points_cost')
     employee_email = serializers.ReadOnlyField(source='employee.email')
+    employee_home_address = serializers.ReadOnlyField(source='employee.home_address')
     employee_name = serializers.SerializerMethodField()
     source_warehouse_name = serializers.ReadOnlyField(source='source_warehouse.username')
     destination_warehouse_name = serializers.ReadOnlyField(source='destination_warehouse.username')
@@ -202,11 +222,11 @@ class DispatchOrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'tracking_number', 'gift', 'gift_name', 'gift_description',
             'gift_category', 'gift_price', 'gift_points_cost', 'quantity', 
-            'employee', 'employee_email', 'employee_name', 'destination_wilaya',
+            'employee', 'employee_email', 'employee_name', 'employee_home_address', 'destination_wilaya',
             'source_warehouse', 'source_warehouse_name',
             'destination_warehouse', 'destination_warehouse_name',
             'current_warehouse', 'current_warehouse_name',
-            'status', 'route', 'created_at', 'updated_at'
+            'status', 'route', 'current_lat', 'current_lng', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'tracking_number', 'source_warehouse', 'current_warehouse', 'created_at', 'updated_at']
 
@@ -215,3 +235,9 @@ class DispatchOrderSerializer(serializers.ModelSerializer):
         if emp.first_name and emp.last_name:
             return f"{emp.first_name} {emp.last_name}"
         return emp.username or emp.email.split('@')[0]
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = '__all__'

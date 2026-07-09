@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/custom-toast";
 
+import api from "@/api/api";
+
 export default function WarehouseManagement() {
   const toast = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,58 +36,100 @@ export default function WarehouseManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [entriesPerPage, setEntriesPerPage] = useState(10);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [warehouses, setWarehouses] = useState([]);
 
   const appleFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-  const [warehouses, setWarehouses] = useState([
-    { id: 1, name: "Algiers Central Depot", location: "Algiers, Bab El Oued", manager: "Ahmed Benmohammed", capacity: 5000, used: 4200, status: "Active", zones: 12, lastAudit: "2025-06-01" },
-    { id: 2, name: "Oran Distribution Hub", location: "Oran, Es-Senia", manager: "Karim Zerhouni", capacity: 3500, used: 2800, status: "Active", zones: 8, lastAudit: "2025-05-20" },
-    { id: 3, name: "Constantine East Storage", location: "Constantine, El Khroub", manager: "Fatima Belarbi", capacity: 2000, used: 1650, status: "Active", zones: 6, lastAudit: "2025-05-28" },
-    { id: 4, name: "Annaba Port Warehouse", location: "Annaba, Port Area", manager: "Youcef Hadjadj", capacity: 4000, used: 3100, status: "Active", zones: 10, lastAudit: "2025-06-05" },
-    { id: 5, name: "Setif Logistics Center", location: "Sétif, Industrial Zone", manager: "Mourad Bouzid", capacity: 1500, used: 900, status: "Active", zones: 4, lastAudit: "2025-05-15" },
-    { id: 6, name: "Blida South Reserve", location: "Blida, Route Nationale", manager: "Nadia Oukil", capacity: 2500, used: 2400, status: "Warning", zones: 7, lastAudit: "2025-04-10" },
-    { id: 7, name: "Tlemcen Border Depot", location: "Tlemcen, Maghnia", manager: "Hassan Mebarki", capacity: 1000, used: 0, status: "Inactive", zones: 3, lastAudit: "2025-01-20" },
-    { id: 8, name: "Ghardaia Regional Store", location: "Ghardaïa, Centre", manager: "Omar Tadjer", capacity: 800, used: 520, status: "Active", zones: 2, lastAudit: "2025-06-08" },
-  ]);
-
   const [newWarehouse, setNewWarehouse] = useState({
-    name: "", location: "", manager: "", capacity: 0, zones: 0
+    name: "", location: "", manager: "", capacity: 0, zones: 0, email: "", password: ""
   });
+
+  const fetchWarehouses = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/users/?role=WAREHOUSE");
+      const data = res.data.results || res.data || [];
+      // Map API fields to UI fields
+      const mapped = data.map(user => ({
+        id: user.id,
+        name: user.username,
+        email: user.email,
+        location: user.location || "Location not set",
+        manager: user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : (user.email || user.username),
+        capacity: user.capacity || 5000,
+        used: user.used_capacity || 0, 
+        status: user.is_active ? "Active" : "Inactive",
+        zones: user.zones || 1, 
+        lastAudit: "—",
+      }));
+      setWarehouses(mapped);
+    } catch (error) {
+      console.error("Failed to fetch warehouses:", error);
+      toast.error("Failed to load warehouses.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWarehouses();
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, entriesPerPage]);
 
-  const handleCreateWarehouse = () => {
-    if (!newWarehouse.name.trim()) {
-      toast.error("Warehouse name is required.");
+  const handleCreateWarehouse = async () => {
+    if (!newWarehouse.name.trim() || !newWarehouse.email.trim() || !newWarehouse.password.trim()) {
+      toast.error("Name, email, and password are required.");
       return;
     }
-    const created = {
-      id: Date.now(),
-      ...newWarehouse,
-      capacity: Number(newWarehouse.capacity) || 0,
-      zones: Number(newWarehouse.zones) || 0,
-      used: 0,
-      status: "Active",
-      lastAudit: "—",
-    };
-    setWarehouses(prev => [created, ...prev]);
-    setShowCreateModal(false);
-    setNewWarehouse({ name: "", location: "", manager: "", capacity: 0, zones: 0 });
-    toast.success(`Warehouse "${created.name}" registered.`);
+    try {
+      const payload = {
+        role: "WAREHOUSE",
+        username: newWarehouse.name,
+        email: newWarehouse.email,
+        password: newWarehouse.password,
+        location: newWarehouse.location,
+        first_name: newWarehouse.manager.split(" ")[0] || "",
+        last_name: newWarehouse.manager.split(" ").slice(1).join(" ") || "",
+        capacity: Number(newWarehouse.capacity) || 0,
+        zones: Number(newWarehouse.zones) || 1
+      };
+      await api.post("/users/", payload);
+      toast.success(`Warehouse "${newWarehouse.name}" registered.`);
+      setShowCreateModal(false);
+      setNewWarehouse({ name: "", location: "", manager: "", capacity: 0, zones: 0, email: "", password: "" });
+      fetchWarehouses();
+    } catch (error) {
+      console.error("Failed to create warehouse:", error);
+      toast.error("Failed to register warehouse.");
+    }
   };
 
-  const handleDeleteWarehouse = (wh) => {
+  const handleDeleteWarehouse = async (wh) => {
     if (!window.confirm(`Remove "${wh.name}"? This cannot be undone.`)) return;
-    setWarehouses(prev => prev.filter(w => w.id !== wh.id));
-    toast.success("Warehouse removed.");
+    try {
+      await api.delete(`/users/${wh.id}/`);
+      setWarehouses(prev => prev.filter(w => w.id !== wh.id));
+      toast.success("Warehouse removed.");
+    } catch (error) {
+      console.error("Failed to delete warehouse:", error);
+      toast.error("Failed to remove warehouse.");
+    }
   };
 
-  const handleToggleStatus = (wh) => {
-    const next = wh.status === "Active" ? "Inactive" : "Active";
-    setWarehouses(prev => prev.map(w => w.id === wh.id ? { ...w, status: next } : w));
-    toast.success(`"${wh.name}" is now ${next}.`);
+  const handleToggleStatus = async (wh) => {
+    const nextStatus = wh.status === "Active" ? false : true;
+    try {
+      await api.patch(`/users/${wh.id}/`, { is_active: nextStatus });
+      setWarehouses(prev => prev.map(w => w.id === wh.id ? { ...w, status: nextStatus ? "Active" : "Inactive" } : w));
+      toast.success(`"${wh.name}" is now ${nextStatus ? "Active" : "Inactive"}.`);
+    } catch (error) {
+      console.error("Failed to toggle status:", error);
+      toast.error("Failed to update status.");
+    }
   };
 
   const filteredWarehouses = warehouses.filter(wh => {
@@ -202,7 +246,12 @@ export default function WarehouseManagement() {
       {/* Table */}
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-visible animate-in fade-in slide-in-from-bottom-2 duration-300">
         <div className="w-full">
-          {filteredWarehouses.length === 0 ? (
+          {loading ? (
+            <div className="p-10 text-center flex flex-col items-center justify-center min-h-[300px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-3"></div>
+              <span className="text-sm font-medium text-muted-foreground">Loading warehouses...</span>
+            </div>
+          ) : filteredWarehouses.length === 0 ? (
             <div className="p-10 text-center flex flex-col items-center justify-center space-y-3 bg-muted/30">
               <Warehouse className="w-10 h-10 stroke-[1.5] text-muted-foreground" />
               <span className="text-[13px] font-medium text-muted-foreground">No warehouses found.</span>
@@ -221,7 +270,8 @@ export default function WarehouseManagement() {
               </thead>
               <tbody>
                 {paginatedWarehouses.map((wh) => {
-                  const pct = wh.capacity > 0 ? Math.round((wh.used / wh.capacity) * 100) : 0;
+                  const safeCapacity = wh.capacity || 5000;
+                  const pct = Math.round((wh.used / safeCapacity) * 100);
                   const statusStyle = getStatusBadge(wh.status);
                   return (
                     <tr key={wh.id} className="transition-colors duration-150 border-b border-border/40 last:border-b-0 hover:bg-muted/30 group">
@@ -255,12 +305,14 @@ export default function WarehouseManagement() {
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
                             <span>{wh.used.toLocaleString()} used</span>
-                            <span>{wh.capacity.toLocaleString()} total</span>
+                            <span>{safeCapacity.toLocaleString()} total</span>
                           </div>
                           <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${getCapacityColor(pct)}`} style={{ width: `${pct}%` }} />
+                            <div className={`h-full rounded-full transition-all ${getCapacityColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
-                          <span className="text-[9px] font-bold text-muted-foreground">{pct}% utilized</span>
+                          <span className="text-[9px] font-bold text-muted-foreground">
+                            {pct}% utilized
+                          </span>
                         </div>
                       </td>
                       <td className="py-3 px-6 text-right">
@@ -338,8 +390,22 @@ export default function WarehouseManagement() {
             </div>
 
             <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Email Address *</label>
+                  <input type="email" value={newWarehouse.email} onChange={e => setNewWarehouse(p => ({ ...p, email: e.target.value }))}
+                    placeholder="wh@ooredoo.dz"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Password *</label>
+                  <input type="password" value={newWarehouse.password} onChange={e => setNewWarehouse(p => ({ ...p, password: e.target.value }))}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" />
+                </div>
+              </div>
               <div>
-                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Warehouse Name *</label>
+                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Warehouse Name (Username) *</label>
                 <input type="text" value={newWarehouse.name} onChange={e => setNewWarehouse(p => ({ ...p, name: e.target.value }))}
                   placeholder="e.g. Algiers North Depot"
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" />
@@ -364,7 +430,7 @@ export default function WarehouseManagement() {
                 </div>
                 <div>
                   <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Storage Zones</label>
-                  <input type="number" min="0" value={newWarehouse.zones} onChange={e => setNewWarehouse(p => ({ ...p, zones: e.target.value }))}
+                  <input type="number" min="1" value={newWarehouse.zones} onChange={e => setNewWarehouse(p => ({ ...p, zones: e.target.value }))}
                     className="w-full px-2 py-2 border border-border rounded-lg text-xs bg-background text-foreground focus:outline-none font-medium" />
                 </div>
               </div>

@@ -48,6 +48,10 @@ export default function GiftManagement() {
   const [selectedGift, setSelectedGift] = useState(null);
   const [selectedGiftId, setSelectedGiftId] = useState("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [giftSearch, setGiftSearch] = useState("");
+  const [showGiftDropdown, setShowGiftDropdown] = useState(false);
   
   const appleFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -105,6 +109,10 @@ export default function GiftManagement() {
   const openAssignModal = (gift) => {
     setSelectedGift(gift);
     setSelectedEmployeeId("");
+    setEmployeeSearch("");
+    setShowEmployeeDropdown(false);
+    setGiftSearch("");
+    setShowGiftDropdown(false);
     if (gift) {
       setSelectedGiftId(gift.id.toString());
     } else {
@@ -133,6 +141,10 @@ export default function GiftManagement() {
       setSelectedGift(null);
       setSelectedGiftId("");
       setSelectedEmployeeId("");
+      setEmployeeSearch("");
+      setShowEmployeeDropdown(false);
+      setGiftSearch("");
+      setShowGiftDropdown(false);
       fetchData();
     } catch (error) {
       console.error("Failed to assign gift:", error);
@@ -543,40 +555,106 @@ export default function GiftManagement() {
                   </div>
                 </div>
               ) : (
-                <div>
-                  <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">Select Gift *</label>
-                  <select
-                    value={selectedGiftId}
-                    onChange={e => setSelectedGiftId(e.target.value)}
+                <div className="relative">
+                  <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">Search Gift *</label>
+                  <input 
+                    type="text"
+                    placeholder="Start typing gift name..."
+                    value={giftSearch}
+                    onFocus={() => setShowGiftDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowGiftDropdown(false), 200)}
+                    onChange={e => {
+                      setGiftSearch(e.target.value);
+                      setShowGiftDropdown(true);
+                      const activeGifts = gifts.filter(g => g.status === "Active" && g.stock > 0);
+                      const match = activeGifts.find(g => `${g.name} (${g.stock} in stock)` === e.target.value);
+                      setSelectedGiftId(match ? match.id.toString() : "");
+                    }}
                     className="w-full px-3 py-2 border border-border rounded-lg text-xs bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-semibold"
-                  >
-                    <option value="">-- Choose a Gift --</option>
-                    {gifts.filter(g => g.status === "Active" && g.stock > 0).map(g => (
-                      <option key={g.id} value={g.id}>
-                        {g.name} ({g.stock} in stock)
-                      </option>
-                    ))}
-                  </select>
+                  />
+                  {showGiftDropdown && (
+                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto overflow-x-hidden">
+                      {gifts.filter(g => g.status === "Active" && g.stock > 0).filter(g => {
+                        const display = `${g.name} (${g.stock} in stock)`;
+                        return display.toLowerCase().includes(giftSearch.toLowerCase());
+                      }).map(g => {
+                        const display = `${g.name} (${g.stock} in stock)`;
+                        return (
+                          <div 
+                            key={g.id}
+                            className="px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-muted text-foreground transition-colors"
+                            onClick={() => {
+                              setGiftSearch(display);
+                              setSelectedGiftId(g.id.toString());
+                              setShowGiftDropdown(false);
+                            }}
+                          >
+                            {display}
+                          </div>
+                        );
+                      })}
+                      {gifts.filter(g => g.status === "Active" && g.stock > 0).filter(g => {
+                        const display = `${g.name} (${g.stock} in stock)`;
+                        return display.toLowerCase().includes(giftSearch.toLowerCase());
+                      }).length === 0 && (
+                        <div className="px-3 py-2 text-xs text-muted-foreground italic">No matching gifts found.</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">Select Employee *</label>
-                <select 
-                  value={selectedEmployeeId} 
-                  onChange={e => setSelectedEmployeeId(e.target.value)}
+              <div className="relative">
+                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">Search Employee *</label>
+                <input 
+                  type="text"
+                  placeholder="Start typing name or email..."
+                  value={employeeSearch}
+                  onFocus={() => setShowEmployeeDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowEmployeeDropdown(false), 200)}
+                  onChange={e => {
+                    setEmployeeSearch(e.target.value);
+                    setShowEmployeeDropdown(true);
+                    const match = employees.find(emp => {
+                      const name = emp.first_name && emp.last_name ? `${emp.first_name} ${emp.last_name}` : emp.username || emp.email.split('@')[0];
+                      return `${name} (${emp.email})` === e.target.value;
+                    });
+                    setSelectedEmployeeId(match ? match.id.toString() : "");
+                  }}
                   className="w-full px-3 py-2 border border-border rounded-lg text-xs bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-semibold"
-                >
-                  <option value="">-- Choose an Employee --</option>
-                  {employees.map(emp => {
-                    const name = emp.first_name && emp.last_name ? `${emp.first_name} ${emp.last_name}` : emp.username || emp.email.split('@')[0];
-                    return (
-                      <option key={emp.id} value={emp.id}>
-                        {name} ({emp.email})
-                      </option>
-                    );
-                  })}
-                </select>
+                />
+                {showEmployeeDropdown && (
+                  <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto overflow-x-hidden">
+                    {employees.filter(emp => {
+                      const name = emp.first_name && emp.last_name ? `${emp.first_name} ${emp.last_name}` : emp.username || emp.email.split('@')[0];
+                      const display = `${name} (${emp.email})`;
+                      return display.toLowerCase().includes(employeeSearch.toLowerCase());
+                    }).map(emp => {
+                      const name = emp.first_name && emp.last_name ? `${emp.first_name} ${emp.last_name}` : emp.username || emp.email.split('@')[0];
+                      const display = `${name} (${emp.email})`;
+                      return (
+                        <div 
+                          key={emp.id}
+                          className="px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-muted text-foreground transition-colors"
+                          onClick={() => {
+                            setEmployeeSearch(display);
+                            setSelectedEmployeeId(emp.id.toString());
+                            setShowEmployeeDropdown(false);
+                          }}
+                        >
+                          {display}
+                        </div>
+                      );
+                    })}
+                    {employees.filter(emp => {
+                      const name = emp.first_name && emp.last_name ? `${emp.first_name} ${emp.last_name}` : emp.username || emp.email.split('@')[0];
+                      const display = `${name} (${emp.email})`;
+                      return display.toLowerCase().includes(employeeSearch.toLowerCase());
+                    }).length === 0 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground italic">No matching employees found.</div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

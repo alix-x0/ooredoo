@@ -46,7 +46,7 @@ export default function UserManagement() {
   // Create Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmployee, setNewEmployee] = useState({
-    email: "", password: "", first_name: "", last_name: "", phone: "", department: "", job_title: ""
+    email: "", password: "", first_name: "", last_name: "", phone: "", department: "", job_title: "", home_address: ""
   });
 
   // Get search params for role filtering
@@ -117,7 +117,7 @@ export default function UserManagement() {
       toast.success(`Employee account "${res.data.email}" created successfully!`);
       setShowAddModal(false);
       setNewEmployee({
-        email: "", password: "", first_name: "", last_name: "", phone: "", department: "", job_title: ""
+        email: "", password: "", first_name: "", last_name: "", phone: "", department: "", job_title: "", home_address: ""
       });
       fetchUsers();
     } catch (error) {
@@ -573,6 +573,13 @@ export default function UserManagement() {
                     placeholder="Support Engineer"
                     className="w-full px-3 py-2 border border-border rounded-lg text-xs bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-semibold" />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">Home Address *</label>
+                <textarea value={newEmployee.home_address} onChange={e => setNewEmployee(p => ({ ...p, home_address: e.target.value }))}
+                  placeholder="e.g. 123 Rue Didouche Mourad, Algiers"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-xs bg-background text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-semibold h-16 resize-none" />
               </div>
             </div>
 

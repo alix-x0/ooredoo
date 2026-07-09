@@ -193,6 +193,10 @@ export default function WarehouseDispatches() {
   
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedDispatch, setSelectedDispatch] = useState(null);
+  
+  // Regional Routing Modal State
+  const [showRoutingModal, setShowRoutingModal] = useState(false);
+  const [regionalTarget, setRegionalTarget] = useState("");
 
   const appleFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -273,8 +277,17 @@ export default function WarehouseDispatches() {
       // Fetch other warehouses for transit builder
       const whRes = await api.get("/users/?role=WAREHOUSE");
       const localWarehouses = whRes.data.results || whRes.data || [];
-      // Filter out current warehouse from potential transit hubs
-      setWarehouses(localWarehouses.filter(w => w.id !== profileRes.data?.id));
+      // Filter out current warehouse and deduplicate by username
+      const filtered = localWarehouses.filter(w => w.id !== profileRes.data?.id);
+      const uniqueWarehouses = [];
+      const seen = new Set();
+      for (const w of filtered) {
+        if (!seen.has(w.username)) {
+          seen.add(w.username);
+          uniqueWarehouses.push(w);
+        }
+      }
+      setWarehouses(uniqueWarehouses);
 
     } catch (error) {
       console.error("Failed to load dispatches data:", error);
@@ -287,6 +300,25 @@ export default function WarehouseDispatches() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (showRoutingModal && selectedDispatch) {
+      const wilaya = (selectedDispatch.destination_wilaya || "").toLowerCase();
+      const westWilayas = ["oran", "tlemcen", "adrar", "sidi bel abbes", "mostaganem", "mascara", "relizane", "tiaret", "saida", "bechar", "tindouf", "naama", "el bayadh", "ain temouchent"];
+      const eastWilayas = ["constantine", "annaba", "sétif", "skikda", "batna", "jijel", "bejaia", "bordj bou arreridj", "guelma", "souk ahras", "tebessa", "mila", "oum el bouaghi", "khenchela", "tarf"];
+      
+      const westHub = warehouses.find(w => w.username === "west_hub");
+      const eastHub = warehouses.find(w => w.username === "east_hub");
+      
+      if (westWilayas.some(w => wilaya.includes(w)) && westHub) {
+        setRegionalTarget(String(westHub.id));
+      } else if (eastWilayas.some(w => wilaya.includes(w)) && eastHub) {
+        setRegionalTarget(String(eastHub.id));
+      } else {
+        setRegionalTarget("");
+      }
+    }
+  }, [showRoutingModal, selectedDispatch, warehouses]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -383,6 +415,26 @@ export default function WarehouseDispatches() {
     } catch (error) {
       console.error("Failed to create dispatch:", error);
       toast.error(error.response?.data?.quantity || "Failed to register dispatch order.");
+    }
+  };
+
+  const handleRouteRegional = async () => {
+    if (!regionalTarget) {
+      toast.error("Please select a regional warehouse destination.");
+      return;
+    }
+    try {
+      const res = await api.post(`/dispatches/${selectedDispatch.id}/action/`, { 
+        action: "route_regional", 
+        regional_warehouse_id: regionalTarget 
+      });
+      setDispatches(prev => prev.map(d => d.id === selectedDispatch.id ? res.data : d));
+      toast.success("Successfully routed to regional hub!");
+      setShowRoutingModal(false);
+      setSelectedDispatch(res.data);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to route to regional hub.");
     }
   };
 
@@ -528,15 +580,6 @@ export default function WarehouseDispatches() {
               </>
             )}
           </div>
-
-          {/* Create Button */}
-          <button 
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Dispatch Order
-          </button>
         </div>
       </div>
 
@@ -582,8 +625,9 @@ export default function WarehouseDispatches() {
 
                       const canDepart = isCurrent && (d.status === "Pending Dispatch" || d.status === "Arrived") && d.status !== "Delivered";
                       const canArrive = d.status === "In Transit" && isNextHub;
-                      const canDeliver = isCurrent && d.status === "Arrived" && isDestination;
                       const canCancel = isSource && d.status !== "Delivered" && d.status !== "Cancelled";
+                      const isCentralHub = profile?.username === 'central_hub';
+                      const canRouteRegional = isCentralHub && isSource && d.status === "Pending Dispatch" && (!d.route || d.route.length === 0);
 
                       return (
                         <tr 
@@ -628,6 +672,11 @@ export default function WarehouseDispatches() {
                                 </button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-44 p-1.5 shadow-lg rounded-xl border border-border bg-card">
+                                {canRouteRegional && (
+                                  <DropdownMenuItem className="cursor-pointer gap-2 text-xs font-semibold rounded-lg py-1.5 text-purple-600" onClick={() => { setSelectedDispatch(d); setShowRoutingModal(true); }}>
+                                    <Navigation className="h-3.5 w-3.5" /><span>Route to Regional Hub</span>
+                                  </DropdownMenuItem>
+                                )}
                                 {canDepart && (
                                   <DropdownMenuItem className="cursor-pointer gap-2 text-xs font-semibold rounded-lg py-1.5 text-blue-600" onClick={() => handleAction(d.id, "depart")}>
                                     <Send className="h-3.5 w-3.5" /><span>Depart Shipment</span>
@@ -635,12 +684,7 @@ export default function WarehouseDispatches() {
                                 )}
                                 {canArrive && (
                                   <DropdownMenuItem className="cursor-pointer gap-2 text-xs font-semibold rounded-lg py-1.5 text-emerald-600" onClick={() => handleAction(d.id, "arrive")}>
-                                    <Navigation className="h-3.5 w-3.5" /><span>Check-in (Arrived)</span>
-                                  </DropdownMenuItem>
-                                )}
-                                {canDeliver && (
-                                  <DropdownMenuItem className="cursor-pointer gap-2 text-xs font-semibold rounded-lg py-1.5 text-emerald-600" onClick={() => handleAction(d.id, "deliver")}>
-                                    <Check className="h-3.5 w-3.5" /><span>Handover to Employee</span>
+                                    <Navigation className="h-3.5 w-3.5" /><span>Confirm Arrival</span>
                                   </DropdownMenuItem>
                                 )}
                                 {canCancel && (
@@ -651,7 +695,7 @@ export default function WarehouseDispatches() {
                                     </DropdownMenuItem>
                                   </>
                                 )}
-                                {!canDepart && !canArrive && !canDeliver && !canCancel && (
+                                {!canRouteRegional && !canDepart && !canArrive && !canCancel && (
                                   <DropdownMenuItem disabled className="text-xs font-semibold text-muted-foreground rounded-lg py-1.5">
                                     No Actions Available
                                   </DropdownMenuItem>
@@ -705,6 +749,10 @@ export default function WarehouseDispatches() {
                 <div className="flex flex-col">
                   <span className="text-muted-foreground">Target Wilaya</span>
                   <span className="text-foreground">{selectedDispatch.destination_wilaya}</span>
+                </div>
+                <div className="flex flex-col col-span-2 bg-background p-2 rounded border border-border/50 mt-1 mb-1">
+                  <span className="text-muted-foreground text-[9px] uppercase tracking-wider">Delivery Address</span>
+                  <span className="text-foreground">{selectedDispatch.employee_home_address || "Home address not provided"}</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-muted-foreground">Quantity</span>
@@ -929,6 +977,82 @@ export default function WarehouseDispatches() {
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
               >
                 Create Waybill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Route Regional Modal */}
+      {showRoutingModal && selectedDispatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowRoutingModal(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full p-6 space-y-6 animate-in fade-in zoom-in-95 duration-200" 
+            onClick={e => e.stopPropagation()} style={{ fontFamily: appleFont, maxWidth: "400px" }}>
+            
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Navigation className="h-4 w-4 text-purple-600" /> Route to Regional Hub
+              </h2>
+              <button onClick={() => setShowRoutingModal(false)} className="p-1 rounded-md hover:bg-muted text-muted-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-muted/30 p-3 rounded-lg border border-border/50 text-[11px] text-muted-foreground font-medium">
+                <span className="block text-foreground font-bold mb-1">Target Wilaya: {selectedDispatch.destination_wilaya}</span>
+                Based on the destination, please select the most appropriate regional logistics hub to forward this waybill to.
+              </div>
+              
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground block mb-2">Select Regional Hub *</label>
+                <div className="space-y-2">
+                  {warehouses.filter(w => w.username === "east_hub" || w.username === "west_hub").map(wh => (
+                    <button
+                      key={wh.id}
+                      onClick={() => setRegionalTarget(String(wh.id))}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+                        regionalTarget === String(wh.id) 
+                          ? "border-purple-500 bg-purple-50/50 dark:bg-purple-950/20 shadow-sm" 
+                          : "border-border hover:border-border/80 hover:bg-muted/50"
+                      }`}
+                    >
+                      <div>
+                        <span className={`block text-xs font-bold ${regionalTarget === String(wh.id) ? "text-purple-700 dark:text-purple-400" : "text-foreground"}`}>
+                          {wh.username === "east_hub" ? "East Hub (Constantine)" : "West Hub (Oran)"}
+                        </span>
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">
+                          {wh.location || "Regional Distribution Center"}
+                        </span>
+                      </div>
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        regionalTarget === String(wh.id) ? "border-purple-500 bg-purple-500" : "border-muted-foreground/30"
+                      }`}>
+                        {regionalTarget === String(wh.id) && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                    </button>
+                  ))}
+                  {warehouses.filter(w => w.username === "east_hub" || w.username === "west_hub").length === 0 && (
+                    <div className="text-xs text-rose-500 font-semibold p-2">
+                      Regional hubs (east_hub, west_hub) not found in system.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button 
+                onClick={() => setShowRoutingModal(false)} 
+                className="px-5 py-2.5 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-muted transition-colors border border-border"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleRouteRegional} 
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition-colors shadow-sm flex items-center gap-2"
+              >
+                Confirm Route <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
